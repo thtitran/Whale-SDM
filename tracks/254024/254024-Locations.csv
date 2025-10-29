@@ -1,0 +1,5 @@
+DeployID,Ptt,Instr,Date,Type,Quality,Latitude,Longitude,Error radius,Error Semi-major axis,Error Semi-minor axis,Error Ellipse orientation,Offset,Offset orientation,GPE MSD,GPE U,Count,Comment
+254024,254024,UT,17:20:25 08-Apr-2024,Argos,2,36.9483,-122.0651,257,635,103,83,,,,,,
+254024,254024,UT,17:20:25 08-Apr-2024,Argos,2,36.9483,-122.0651,257,635,103,83,,,,,,
+254024,254024,UT,17:34:30 08-Apr-2024,Argos,B,36.9541,-122.0595,732,1518,353,115,,,,,,
+254024,254024,UT,16:05:14 11-Sep-2024,Argos,1,36.9499,-122.0771,828,4407,155,103,,,,,,
