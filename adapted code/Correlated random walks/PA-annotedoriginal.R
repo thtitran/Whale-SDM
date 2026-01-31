@@ -6,6 +6,14 @@ require(sp)
 require(raster)
 library(dplyr) #sorting/filtering
 
+#Example csv of humpback
+hbtag <- "C:/github/Whale-SDM/Output/Track processing output/254025-RawArgos_pred_6h.csv"
+
+
+#Humpback csv requires conversion to UTC POSIXct format:
+dat$dtime <- as.POSIXct(dat$date, tz = "UTC")
+
+
 #takes one observed track to generate pseudo-absences
 #tags = dataframe containing all animals, tagid=from blue_whale_dataset.r wrapper
 createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
