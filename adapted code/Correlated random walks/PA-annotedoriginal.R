@@ -7,11 +7,20 @@ require(raster)
 library(dplyr) #sorting/filtering
 
 #Example csv of humpback
-hbtag <- "C:/github/Whale-SDM/Output/Track processing output/254025-RawArgos_pred_6h.csv"
+hbtag <- read.csv("C:/github/Whale-SDM/Output/Track processing output/254025-RawArgos_pred_6h.csv", stringsAsFactors = FALSE)
 
 
 #Humpback csv requires conversion to UTC POSIXct format:
-dat$dtime <- as.POSIXct(dat$date, tz = "UTC")
+  hbtag$dTime <- as.POSIXct(hbtag$date, tz = "UTC")
+  #Changing column names to suite code
+  hbtag$tags <- hbtag$id
+  hbtag$long <- hbtag$lon
+  names(hbtag)
+  
+  #New tag data frame
+  tags <- hbtag[, c("tags", "long", "lat", "dTime")]
+
+
 
 
 #takes one observed track to generate pseudo-absences
@@ -44,17 +53,22 @@ createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
     return(NULL)
   }
   
-  # Create trajectory
-  #Creates  trajectory object (ltraj) that includes step-by-step movement calcs then extracts  first (and usually only) trajectory element
-  tr <- as.ltraj(cbind(tag$long, tag$lat), date = tag$dTime, id = tagid) #makes a 2-column matrix of coordinates, from adehabitatLT constructs an ltraj object
-  #tr is actually a list of trajectories (one per id).
-  tr1 <- tr[[1]]
-  #tr1 (the actual trajectory data for this individual)
-    #tr1 contains derived columns such as:
-      #dist = step length between successive points
-      #dt = time difference between points (seconds)
-      #rel.angle = turning angle between successive steps (radians)
-      #abs.angle = heading direction (radians)
+# Create trajectory
+#Creates  trajectory object (ltraj) that includes step-by-step movement calcs then extracts  first (and usually only) trajectory element
+tr <- as.ltraj(cbind(tag$long, tag$lat), date = tag$dTime, id = tagid) #makes a 2-column matrix of coordinates, from adehabitatLT constructs an ltraj object
+#tr is actually a list of trajectories (one per id).
+tr1 <- tr[[1]]
+#tr1 (the actual trajectory data for this individual)
+   #tr1 contains derived columns such as:
+     #dist = step length between successive points
+     #dt = time difference between points (seconds)
+     #rel.angle = turning angle between successive steps (radians)
+     #abs.angle = heading direction (radians)
+  }
+summary(tr1$dist)
+summary(tr1$dt)
+summary(tr1$rel.angle)
+
 
 #Creates an index of rows in tr1 that have all the movement quantities needed for simulation.
   #tr1[['dist']] accesses the dist column, Using [['...']] instead of $dist is just another access style
