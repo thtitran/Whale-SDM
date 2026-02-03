@@ -4,6 +4,7 @@ require(mapdata)
 require(maptools) #builds a land polygon and tests if a simulated point is on land.
 require(sp)
 require(raster)
+library(sf)
 library(dplyr) #sorting/filtering
 
 #Example csv of humpback
@@ -86,14 +87,15 @@ summary(tr1$rel.angle)
   }
 
   
-  CC.map <- maps::map('worldHires', fill = TRUE, col = 'transparent', plot = FALSE, ylim = c(0, 50))
+  CC.map <- maps::map('worldHires', fill = TRUE, col = 'transparent', plot = FALSE, xlim=c(-150, -90), ylim=c(0, 55))
     #Loads coastline polygons from the maps package (high-res world), but doesn’t plot them.
         #plot = FALSE returns the map object instead of drawing it.
         #ylim = c(0, 50) restricts latitudes included (saves work; focuses region).
     #New object: CC.map (a map object containing polygon coordinates and names)
-  CC.IDs <- sapply(strsplit(CC.map$names, ":"), function(x) x[1]) #Creates polygon IDs from the map names.
-  CC.sp <- map2SpatialPolygons(CC.map, IDs = CC.IDs, proj4string = CRS("+proj=longlat +datum=WGS84"))
-    #Converts the map polygons into an sp::SpatialPolygons object with a WGS84 lon/lat CRS.
+  CC.sf <- sf::st_as_sf(CC.map) #Convert map object -> sf polygons
+  CC.sf <- sf::st_set_crs(CC.sf, 4326)  #Ensure CRS is lon/lat WGS84
+  #REMOVED CC.sp <- map2SpatialPolygons(CC.map, IDs = CC.IDs, proj4string = CRS("+proj=longlat +datum=WGS84")) 
+  #Converts the map polygons into an sp::SpatialPolygons object with a WGS84 lon/lat CRS.
   
   sim.alltags <- NULL #Initializes an empty container & will repeatedly rbind() simulation results onto this
   
@@ -102,12 +104,13 @@ summary(tr1$rel.angle)
         #Repeats the entire simulation process n.sim times, k is the loop counter (thus not stored after the loop finishes).
     
     n.tag <- nrow(tag)
-    sim <- data.frame(x = numeric(n.tag), y = numeric(n.tag), t = as.POSIXct(rep(NA, n.tag)), flag = NA, iteration = rep(k, n.tag))
-      #Creates a dataframe sim with the same number of rows as the observed track, intended to hold the simulated track.
-    sim[1, 'x'] <- tag$long[1]
-    sim[1, 'y'] <- tag$lat[1]
-    sim[1, 't'] <- tr1$date[1]
-    angle <- tr1[2, 'abs.angle']
+    
+    sim <- data.frame(x = numeric(n.tag),y = numeric(n.tag),t = as.POSIXct(rep(NA, n.tag), tz = "UTC"),flag = NA_real_,iteration = rep(k, n.tag))
+    #Creates a dataframe sim with the same number of rows as the observed track, intended to hold the simulated track.
+    sim[1, "x"] <- tag$long[1]
+    sim[1, "y"] <- tag$lat[1]
+    sim[1, "t"] <- tr1$date[1]
+    angle <- tr1[2, "abs.angle"]
       #Initial conditions:
           #The simulated track starts at the observed first location.
           #The simulated start time is the observed first time.
@@ -117,52 +120,73 @@ summary(tr1$rel.angle)
           #New: angle (current heading, in radians)
     
     for (j in 2:n.tag) {
+      # We’re building ONE simulated track, point by point.
+      # j indexes position along this simulated track:
+      #   j = 1 is the anchored start point (already set)
+      #   j = 2..n.tag are simulated steps
+    
       on.land <- TRUE
+      tries <- 0
+      # Rejection sampler:
+      # Keep proposing a candidate point until it is NOT on land.
       while (on.land) {
-       #For each position index j (2..n.tag), it keeps trying to propose a step until that proposal lands in the ocean.
-          #on.land <- TRUE starts a “rejection sampling” loop.
-          #while(on.land) repeats until you set on.land <- FALSE.
-         
-          i <- sample(i.tr1.nona, 1)
-        dist <- tr1[i, 'dist']
-        angle <- angle + tr1[i, 'rel.angle']
-        #Randomly picks one observed step index i, and uses:
-          #its step length (dist)
-          #its turning angle (rel.angle)
-          #to update the heading.
         
-        x <- sim[j - 1, 'x'] + dist * cos(angle)
-        y <- sim[j - 1, 'y'] + dist * sin(angle)
-        #Moves from the previous simulated point to a new proposed point using basic trig, creates new y and x
+        # Safety cap: prevents infinite loops if something goes wrong
+        # (e.g., step sizes too large, land mask mismatch, etc.)
+        tries <- tries + 1
+        if (tries > 5000) {
+          stop(paste(
+            "Stuck in land-rejection loop at step", j,
+            "simulation", k,
+            "- check step lengths or land mask"
+          ))
+        }
         
-        pt <- SpatialPoints(matrix(c(x, y), nrow = 1), proj4string = CRS("+proj=longlat +datum=WGS84"))
-        place <- over(pt, CC.sp)
-        #Checks whether the proposed point is on land.
-          #Creates a spatial point object at (x,y).
-          #Uses over() to see if it lies inside any land polygon.
-        #New objects
-          #pt (SpatialPoints)
-          #place (result of spatial overlay)
+        # Sample ONE observed movement “step” from the empirical pool:
+        # i.tr1.nona contains indices where dist, dt, rel.angle are all defined.
+        i <- sample(i.tr1.nona, 1)
         
-        if (is.na(place)) {
-          sim[j, 'x'] <- x
-          sim[j, 'y'] <- y
-          #Accept the proposed point and store it in the simulated track.
+        # Step length (dist) and turning angle (rel.angle) come from the observed track.
+        dist  <- tr1[i, "dist"]
+        angle <- angle + tr1[i, "rel.angle"]
+        # angle is the *current heading* (radians) we carry forward through the simulation.
+        # We update it by adding a sampled turning angle.
+        
+        # Propose a new location using trig (a correlated random walk step):
+        x <- sim[j - 1, "x"] + dist * cos(angle)
+        y <- sim[j - 1, "y"] + dist * sin(angle)
+        # NOTE: because x/y here are lon/lat, dist is in degrees (not meters).
+        
+        # Land test using sf (modern spatial workflow):
+        # 1) make a point geometry at the proposed (x, y)
+        # 2) check whether it intersects any land polygon in CC.sf
+        pt <- sf::st_sfc(sf::st_point(c(x, y)), crs = 4326)
+        on.land <- any(sf::st_intersects(pt, CC.sf, sparse = FALSE))
+        # on.land = TRUE  → reject and try again
+        # on.land = FALSE → accept below
+        
+        if (!on.land) {
+          # Accept the proposed point: store it in the simulated track
+          sim[j, "x"] <- x
+          sim[j, "y"] <- y
           
-          dt_i <- tr1[i, 'dt']
+          # Advance time by a sampled time step from the observed track
+          dt_i <- tr1[i, "dt"]
+          
+          # Guardrail: if dt is missing or absurdly huge, force it to 1 day
           if (is.na(dt_i) || dt_i > (60 * 60 * 24 * 30)) {
-            dt_i <- 60 * 60 * 24  # default to 1 day
+            dt_i <- 60 * 60 * 24
           }
-          sim[j, 't'] <- sim[j - 1, 't'] + dt_i
-          on.land <- FALSE
-          #Advances simulated time by the time gap (dt) from the sampled observed step.
-              #If dt is missing or absurdly huge (> 30 days), force dt to 1 day.
-              #Set the simulated time for row j.
-              #Set on.land <- FALSE to exit the while-loop (we accepted a point).
+          
+          sim[j, "t"] <- sim[j - 1, "t"] + dt_i
+          
+          # We do NOT need to manually set on.land <- FALSE here.
+          # It is already FALSE (that’s why we entered this if-block),
+          # so the while(on.land) will stop naturally on the next check.
         }
       }
     }
-    
+
     # Calculate flag
     tagstart <- rbind(tag[1, ], tag[2, ], tag[n.tag, ])
     tagsim <- rbind(sim[1, ], sim[2, ], sim[n.tag, ])
