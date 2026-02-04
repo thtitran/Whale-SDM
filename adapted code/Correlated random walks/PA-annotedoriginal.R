@@ -21,12 +21,16 @@ hbtag <- read.csv("C:/github/Whale-SDM/Output/Track processing output/254025-Raw
   #New tag data frame
   tags <- hbtag[, c("tags", "long", "lat", "dTime")]
 
-
+  out.dir <- "C:/github/Whale-SDM/Output/CRW_test"
+  dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 
 #takes one observed track to generate pseudo-absences
 #tags = dataframe containing all animals, tagid=from blue_whale_dataset.r wrapper
 createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
+  old_s2 <- sf::sf_use_s2()
+  sf::sf_use_s2(FALSE)
+  on.exit(sf::sf_use_s2(old_s2), add = TRUE)
   print(tagid)
   tag <- tags[which(tags$tags == tagid), c('long', 'lat', 'dTime')] #extracts an individual’s track, tags$tags == tagid creates a logical vector
   #which(...) converts that logical vector into integer row indices (e.g., c(1, 2, 5, 9, ...))
@@ -53,7 +57,8 @@ createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
     warning(paste("Not enough points to simulate tag:", tagid))
     return(NULL)
   }
-  
+
+
 # Create trajectory
 #Creates  trajectory object (ltraj) that includes step-by-step movement calcs then extracts  first (and usually only) trajectory element
 tr <- as.ltraj(cbind(tag$long, tag$lat), date = tag$dTime, id = tagid) #makes a 2-column matrix of coordinates, from adehabitatLT constructs an ltraj object
@@ -65,11 +70,6 @@ tr1 <- tr[[1]]
      #dt = time difference between points (seconds)
      #rel.angle = turning angle between successive steps (radians)
      #abs.angle = heading direction (radians)
-  }
-summary(tr1$dist)
-summary(tr1$dt)
-summary(tr1$rel.angle)
-
 
 #Creates an index of rows in tr1 that have all the movement quantities needed for simulation.
   #tr1[['dist']] accesses the dist column, Using [['...']] instead of $dist is just another access style
@@ -161,7 +161,7 @@ summary(tr1$rel.angle)
         # 1) make a point geometry at the proposed (x, y)
         # 2) check whether it intersects any land polygon in CC.sf
         pt <- sf::st_sfc(sf::st_point(c(x, y)), crs = 4326)
-        on.land <- any(sf::st_intersects(pt, CC.sf, sparse = FALSE))
+        on.land <- suppressWarnings(any(sf::st_intersects(pt, CC.sf, sparse = FALSE)))
         # on.land = TRUE  → reject and try again
         # on.land = FALSE → accept below
         
@@ -188,18 +188,15 @@ summary(tr1$rel.angle)
     }
 
     # Calculate flag
+    # Create minimal 3-point tracks (as.ltraj needs >= 3 points to compute angles)
     tagstart <- rbind(tag[1, ], tag[2, ], tag[n.tag, ])
-    tagsim <- rbind(sim[1, ], sim[2, ], sim[n.tag, ])
-      #Creates two tiny 3-point “tracks”:
-        #tagstart: first, second, last observed point
-        #tagsim: first, second, last simulated point
-        #Why? Because as.ltraj() needs at least 3 points to compute a turning angle/step structure.
+    tagsim   <- rbind(sim[1, ], sim[2, ], sim[n.tag, ])
     
+    # Small jitter to avoid degenerate geometry (e.g., identical points -> undefined angles)
+    # Nudge the second point slightly south so angle calculations don't blow up
     tagstart$lat[2] <- tagstart$lat[1] - 0.01
-    tagsim$y[2] <- tagsim$y[1] - 0.01
-    #This is a hack to prevent degenerate geometry issues when computing angles.
-      #It nudges the second point slightly south to ensure something about the angle computation isn’t undefined.
-      #It’s… hacky, but it’s trying to avoid an edge-case where angle calculations fail (e.g., if points coincide).
+    tagsim$y[2]     <- tagsim$y[1] - 0.01
+    
     
     trstart <- as.ltraj(cbind(tagstart$long, tagstart$lat), date = tagstart$dTime, id = tagid)
     trsim <- as.ltraj(cbind(tagsim$x, tagsim$y), date = tagsim$t, id = tagid)
@@ -238,19 +235,52 @@ summary(tr1$rel.angle)
   res <- 72 #Sets a resolution value (dots per inch) used for the PNG device.
   png(filename = out.png, width = 8*res, height = 8*res, res = res)
   
+  # Choose map extent based on observed + simulated points (with a small buffer)
+  xlim <- range(c(tag$long, sim.alltags$x), na.rm = TRUE) + c(-1, 1)
+  ylim <- range(c(tag$lat,  sim.alltags$y), na.rm = TRUE) + c(-1, 1)
+  
+  
   # Redraw the map and the original track
   maps::map('worldHires', xlim=c(-140, -100), ylim=c(15, 50))
   map.axes()
   
-  lines(tag$lon, tag$lat, col='grey') #Draw the observed track (the real animal track) as a grey line.
-  #Earlier, tag was created with columns:
-    #long, lat, dTime
-    #So tag$lon does not exist (it should be tag$long).
+  # Observed track (thicker grey)
+  lines(tag$long, tag$lat, col = "grey40", lwd = 2)
   
-  points(sim[1, 'x'], sim[1, 'y'], col='blue', pch=2, cex=2) #Mark where the simulation starts.
-  title(main = sprintf("CRW Simulations for tagid %s", tagid))
-  lines(sim$x, sim$y, col='black')
+  # Sample up to 10 simulated iterations and plot them as thin black lines
+  set.seed(1)  # so the same 10 sims get drawn each run (optional)
+  iters <- sort(unique(sim.alltags$iteration))
+  iters_to_plot <- sample(iters, size = min(10, length(iters)), replace = FALSE)
   
+  for (kk in iters_to_plot) {
+    ssub <- sim.alltags[sim.alltags$iteration == kk, ]
+    lines(ssub$x, ssub$y, col = "black", lwd = 1)
+  }
+  
+  # Start point marker (observed)
+  points(tag$long[1], tag$lat[1], pch = 16, cex = 1.2)
+  
+  title(main = sprintf("Observed + %d CRW sims (tagid %s)", length(iters_to_plot), tagid))
+
   dev.off()
   return(sim.alltags)
 }
+
+# ---- TEST RUN (outside the function) ----
+tagid <- unique(tags$tags)[1]
+sim_test <- createCRW(tags, tagid, n.sim = 1)
+
+
+#full CRW set for one whale
+tagid <- unique(tags$tags)[1]
+sim_all <- createCRW(tags, tagid, n.sim = 200)
+
+#run all tags
+tagids <- unique(tags$tags)
+all_sims <- lapply(tagids, function(id) {
+  createCRW(tags, id, n.sim = 200)
+})
+# Optional: combine everything into one big data frame
+all_sims_df <- dplyr::bind_rows(all_sims)
+
+
