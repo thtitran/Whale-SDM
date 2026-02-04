@@ -194,6 +194,12 @@ createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
     
     n.tag <- nrow(tag) # repeat in case n.tag from loop is not picked up
     
+#Safeguard for preventing errors on 0 or NA
+d0 <- trstart[[1]]$dist[2]
+if (is.na(d0) || d0 == 0) d0 <- 1e-6
+sim$flag <- distdiff / d0 * 3 + angdiff / 45
+    
+    
     # Calculate flag
     # Create minimal 3-point tracks (as.ltraj needs >= 3 points to compute angles)
     tagstart <- rbind(tag[1, ], tag[2, ], tag[n.tag, ])
@@ -286,3 +292,5 @@ all_sims <- lapply(tagids, function(id) {
 })
 # Optional: combine everything into one big data frame
 all_sims_df <- dplyr::bind_rows(all_sims)
+
+
