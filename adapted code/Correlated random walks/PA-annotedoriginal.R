@@ -1,9 +1,6 @@
 require(adehabitatLT) #turns a sequence of points into a trajectory object and computes step lengths + turning angles.
 require(maps) 
 require(mapdata)
-require(maptools) #builds a land polygon and tests if a simulated point is on land.
-require(sp)
-require(raster)
 library(sf)
 library(dplyr) #sorting/filtering
 
@@ -12,17 +9,17 @@ hbtag <- read.csv("C:/github/Whale-SDM/Output/Track processing output/254025-Raw
 
 
 #Humpback csv requires conversion to UTC POSIXct format:
-  hbtag$dTime <- as.POSIXct(hbtag$date, tz = "UTC")
-  #Changing column names to suite code
-  hbtag$tags <- hbtag$id
-  hbtag$long <- hbtag$lon
-  names(hbtag)
-  
-  #New tag data frame
-  tags <- hbtag[, c("tags", "long", "lat", "dTime")]
+hbtag$dTime <- as.POSIXct(hbtag$date, tz = "UTC")
+#Changing column names to suite code
+hbtag$tags <- hbtag$id
+hbtag$long <- hbtag$lon
+names(hbtag)
 
-  out.dir <- "C:/github/Whale-SDM/Output/CRW_test"
-  dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
+#New tag data frame
+tags <- hbtag[, c("tags", "long", "lat", "dTime")]
+
+out.dir <- "C:/github/Whale-SDM/Output/CRW_test"
+dir.create(out.dir, recursive = TRUE, showWarnings = FALSE)
 
 
 #takes one observed track to generate pseudo-absences
@@ -57,51 +54,58 @@ createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
     warning(paste("Not enough points to simulate tag:", tagid))
     return(NULL)
   }
-
-
-# Create trajectory
-#Creates  trajectory object (ltraj) that includes step-by-step movement calcs then extracts  first (and usually only) trajectory element
-tr <- as.ltraj(cbind(tag$long, tag$lat), date = tag$dTime, id = tagid) #makes a 2-column matrix of coordinates, from adehabitatLT constructs an ltraj object
-#tr is actually a list of trajectories (one per id).
-tr1 <- tr[[1]]
-#tr1 (the actual trajectory data for this individual)
-   #tr1 contains derived columns such as:
-     #dist = step length between successive points
-     #dt = time difference between points (seconds)
-     #rel.angle = turning angle between successive steps (radians)
-     #abs.angle = heading direction (radians)
-
-#Creates an index of rows in tr1 that have all the movement quantities needed for simulation.
+  
+  
+  # Create trajectory
+  #Creates  trajectory object (ltraj) that includes step-by-step movement calcs then extracts  first (and usually only) trajectory element
+  tr <- as.ltraj(cbind(tag$long, tag$lat), date = tag$dTime, id = tagid) #makes a 2-column matrix of coordinates, from adehabitatLT constructs an ltraj object
+  #tr is actually a list of trajectories (one per id).
+  tr1 <- tr[[1]]
+  #tr1 (the actual trajectory data for this individual)
+  #tr1 contains derived columns such as:
+  #dist = step length between successive points
+  #dt = time difference between points (seconds)
+  #rel.angle = turning angle between successive steps (radians)
+  #abs.angle = heading direction (radians)
+  
+  #Creates an index of rows in tr1 that have all the movement quantities needed for simulation.
   #tr1[['dist']] accesses the dist column, Using [['...']] instead of $dist is just another access style
   #!is.na(...) keeps only rows where the value exists.
   #which(...) converts TRUE/FALSE into row numbers.
   i.tr1.nona <- which(!is.na(tr1[['dist']]) & !is.na(tr1[['rel.angle']]) & !is.na(tr1[['dt']]))
   #New object: i.tr1.nona (integer vector of row indices)
   #Purpose: the simulation will randomly sample from these indices to get:
-    #a step length (dist)
-    #a turning angle (rel.angle)
-    #a time step (dt)
+  #a step length (dist)
+  #a turning angle (rel.angle)
+  #a time step (dt)
   if (length(i.tr1.nona) < 2) {
     warning(paste("Not enough usable steps for tag:", tagid))
     return(NULL)
   }
-
   
-  CC.map <- maps::map('worldHires', fill = TRUE, col = 'transparent', plot = FALSE, xlim=c(-150, -90), ylim=c(0, 55))
-    #Loads coastline polygons from the maps package (high-res world), but doesn’t plot them.
-        #plot = FALSE returns the map object instead of drawing it.
-        #ylim = c(0, 50) restricts latitudes included (saves work; focuses region).
-    #New object: CC.map (a map object containing polygon coordinates and names)
-  CC.sf <- sf::st_as_sf(CC.map) #Convert map object -> sf polygons
-  CC.sf <- sf::st_set_crs(CC.sf, 4326)  #Ensure CRS is lon/lat WGS84
-  #REMOVED CC.sp <- map2SpatialPolygons(CC.map, IDs = CC.IDs, proj4string = CRS("+proj=longlat +datum=WGS84")) 
-  #Converts the map polygons into an sp::SpatialPolygons object with a WGS84 lon/lat CRS.
+  
+  CC.map <- maps::map(
+    "worldHires",
+    fill = TRUE,
+    plot = FALSE,
+    xlim = c(-150, -90),
+    ylim = c(0, 55)
+  )
+  
+  CC.sf <- sf::st_as_sf(CC.map)
+  CC.sf <- sf::st_set_crs(CC.sf, 4326)
+  CC.sf <- sf::st_make_valid(CC.sf)   # optional but recommended
+  CC.sf <- sf::st_union(CC.sf)        # dissolve to one geometry (faster)
+  #Loads coastline polygons from the maps package (high-res world), but doesn’t plot them.
+  #plot = FALSE returns the map object instead of drawing it.
+  #ylim = c(0, 50) restricts latitudes included (saves work; focuses region).
+  #New object: CC.map (a map object containing polygon coordinates and names)
   
   sim.alltags <- NULL #Initializes an empty container & will repeatedly rbind() simulation results onto this
   
   for (k in 1:n.sim) {
     print(sprintf("  k'th simulation: %d", k))
-        #Repeats the entire simulation process n.sim times, k is the loop counter (thus not stored after the loop finishes).
+    #Repeats the entire simulation process n.sim times, k is the loop counter (thus not stored after the loop finishes).
     
     n.tag <- nrow(tag)
     
@@ -111,20 +115,20 @@ tr1 <- tr[[1]]
     sim[1, "y"] <- tag$lat[1]
     sim[1, "t"] <- tr1$date[1]
     angle <- tr1[2, "abs.angle"]
-      #Initial conditions:
-          #The simulated track starts at the observed first location.
-          #The simulated start time is the observed first time.
-          #The initial heading angle is pulled from the observed trajectory (abs.angle at step 2).
-      #New objects
-          #sim now has row 1 initialized.
-          #New: angle (current heading, in radians)
+    #Initial conditions:
+    #The simulated track starts at the observed first location.
+    #The simulated start time is the observed first time.
+    #The initial heading angle is pulled from the observed trajectory (abs.angle at step 2).
+    #New objects
+    #sim now has row 1 initialized.
+    #New: angle (current heading, in radians)
     
     for (j in 2:n.tag) {
       # We’re building ONE simulated track, point by point.
       # j indexes position along this simulated track:
       #   j = 1 is the anchored start point (already set)
       #   j = 2..n.tag are simulated steps
-    
+      
       on.land <- TRUE
       tries <- 0
       # Rejection sampler:
@@ -160,8 +164,9 @@ tr1 <- tr[[1]]
         # Land test using sf (modern spatial workflow):
         # 1) make a point geometry at the proposed (x, y)
         # 2) check whether it intersects any land polygon in CC.sf
+        if (x < -150 || x > -90 || y < 0 || y > 55) next #Quick bounds reject (saves tons of land tests)
         pt <- sf::st_sfc(sf::st_point(c(x, y)), crs = 4326)
-        on.land <- suppressWarnings(any(sf::st_intersects(pt, CC.sf, sparse = FALSE)))
+        on.land <- suppressMessages(suppressWarnings(any(sf::st_intersects(pt, CC.sf, sparse = FALSE))))
         # on.land = TRUE  → reject and try again
         # on.land = FALSE → accept below
         
@@ -186,7 +191,9 @@ tr1 <- tr[[1]]
         }
       }
     }
-
+    
+    n.tag <- nrow(tag) # repeat in case n.tag from loop is not picked up
+    
     # Calculate flag
     # Create minimal 3-point tracks (as.ltraj needs >= 3 points to compute angles)
     tagstart <- rbind(tag[1, ], tag[2, ], tag[n.tag, ])
@@ -208,27 +215,27 @@ tr1 <- tr[[1]]
     #dist[2] corresponds to the step from point 1 → 2 (because the first row often has NA dist).
     
     #rel.angle[2] is a turning angle in radians; they convert to degrees by * 180 / pi.
-      #So:
-        #distdiff = absolute difference in step length
-        #angdiff = absolute difference in turning angle
+    #So:
+    #distdiff = absolute difference in step length
+    #angdiff = absolute difference in turning angle
     
     sim$flag <- distdiff / trstart[[1]]$dist[2] * 3 + angdiff / 45
     #Computes a single score (“flag”) and assigns it to every row in this simulated track.
-      #penalize distance mismatch relative to observed distance, scaled by 3
-      #plus penalize angle mismatch scaled by 45 degrees
-     #So lower flag ≈ “the first move looks like the observed first move”.
+    #penalize distance mismatch relative to observed distance, scaled by 3
+    #plus penalize angle mismatch scaled by 45 degrees
+    #So lower flag ≈ “the first move looks like the observed first move”.
     
     sim.alltags <- rbind(sim.alltags, sim)
     #Appends this simulation’s dataframe sim onto the big collector sim.alltags and ends the outer loop iteration k.
   }
   
   
-  
+  message("Finished sims for tag ", tagid, " — writing outputs now.")
   write.csv(sim.alltags, out.alltags.csv, row.names = FALSE)
   #Writes the big dataframe sim.alltags to a CSV file on disk.
-    #sim.alltags = all simulated points from all n.sim iterations concatenated together.
-    #out.alltags.csv = the filename string created earlier (based on out.dir and tagid).
-      #row.names = FALSE prevents R from adding a leftmost “1,2,3…” column to the CSV.
+  #sim.alltags = all simulated points from all n.sim iterations concatenated together.
+  #out.alltags.csv = the filename string created earlier (based on out.dir and tagid).
+  #row.names = FALSE prevents R from adding a leftmost “1,2,3…” column to the CSV.
   
   # Output map to PNG
   out.png <- sprintf('%s/crw_sim_%s.png', out.dir, tagid)
@@ -238,10 +245,8 @@ tr1 <- tr[[1]]
   # Choose map extent based on observed + simulated points (with a small buffer)
   xlim <- range(c(tag$long, sim.alltags$x), na.rm = TRUE) + c(-1, 1)
   ylim <- range(c(tag$lat,  sim.alltags$y), na.rm = TRUE) + c(-1, 1)
-  
-  
+  maps::map("worldHires", xlim=xlim, ylim=ylim, fill=TRUE, col="grey90")
   # Redraw the map and the original track
-  maps::map('worldHires', xlim=c(-140, -100), ylim=c(15, 50))
   map.axes()
   
   # Observed track (thicker grey)
@@ -261,7 +266,7 @@ tr1 <- tr[[1]]
   points(tag$long[1], tag$lat[1], pch = 16, cex = 1.2)
   
   title(main = sprintf("Observed + %d CRW sims (tagid %s)", length(iters_to_plot), tagid))
-
+  
   dev.off()
   return(sim.alltags)
 }
@@ -269,7 +274,6 @@ tr1 <- tr[[1]]
 # ---- TEST RUN (outside the function) ----
 tagid <- unique(tags$tags)[1]
 sim_test <- createCRW(tags, tagid, n.sim = 1)
-
 
 #full CRW set for one whale
 tagid <- unique(tags$tags)[1]
@@ -282,5 +286,3 @@ all_sims <- lapply(tagids, function(id) {
 })
 # Optional: combine everything into one big data frame
 all_sims_df <- dplyr::bind_rows(all_sims)
-
-
