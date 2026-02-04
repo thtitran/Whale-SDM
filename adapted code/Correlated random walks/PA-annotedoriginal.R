@@ -194,10 +194,6 @@ createCRW <- function(tags, tagid, n.sim = 200, reverse = FALSE) {
     
     n.tag <- nrow(tag) # repeat in case n.tag from loop is not picked up
     
-#Safeguard for preventing errors on 0 or NA
-d0 <- trstart[[1]]$dist[2]
-if (is.na(d0) || d0 == 0) d0 <- 1e-6
-sim$flag <- distdiff / d0 * 3 + angdiff / 45
     
     
     # Calculate flag
@@ -234,7 +230,10 @@ sim$flag <- distdiff / d0 * 3 + angdiff / 45
     sim.alltags <- rbind(sim.alltags, sim)
     #Appends this simulation’s dataframe sim onto the big collector sim.alltags and ends the outer loop iteration k.
   }
-  
+
+#Safeguard for preventing errors by skipping buggy ones
+d0 <- trstart[[1]]$dist[2]
+if (is.na(d0) || d0 <= 0) next
   
   message("Finished sims for tag ", tagid, " — writing outputs now.")
   write.csv(sim.alltags, out.alltags.csv, row.names = FALSE)
@@ -274,8 +273,23 @@ sim$flag <- distdiff / d0 * 3 + angdiff / 45
   title(main = sprintf("Observed + %d CRW sims (tagid %s)", length(iters_to_plot), tagid))
   
   dev.off()
+  
+  if (interactive()) {
+    maps::map("worldHires", xlim=xlim, ylim=ylim, fill=TRUE, col="grey90")
+    map.axes()
+    lines(tag$long, tag$lat, col="grey40", lwd=2)
+    for (kk in iters_to_plot) {
+      ssub <- sim.alltags[sim.alltags$iteration == kk, ]
+      lines(ssub$x, ssub$y, col="black", lwd=1)
+    }
+    points(tag$long[1], tag$lat[1], pch=16, cex=1.2)
+    title(main = sprintf("Observed + %d CRW sims (tagid %s)", length(iters_to_plot), tagid))
+  }
+  
   return(sim.alltags)
 }
+
+
 
 # ---- TEST RUN (outside the function) ----
 tagid <- unique(tags$tags)[1]
