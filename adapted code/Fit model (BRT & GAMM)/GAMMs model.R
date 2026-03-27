@@ -2,12 +2,12 @@ library(mgcv) #GAMMs
 library(lubridate) #datetimes
 
 
-# 1. ------------------- > Load and prep data ####
+# 1 Load and prep data ####
 # Tracking data provided is a subset of 10 randomly selected individuals
 # Response variable name is 'presabs' for Presence-Absence
-tracks <- read.csv("2_Data/blwh_subset_dataset_ps_env.csv") 
+tracks <- read.csv("C:/github/Whale-SDM/Output/CRW_test/crw_sim_254026_0.csv") 
 head(tracks)
-tracks$track_hame <- as.factor(tracks$track_hame)
+tracks$track_name <- as.factor(tracks$track_name)
 tracks$month <- lubridate::month(tracks$dt)
 tracks<-na.omit(tracks)
 
