@@ -1,5 +1,5 @@
-Sys.setenv(COPERNICUSMARINE_SERVICE_USERNAME = "ttran5")
-Sys.setenv(COPERNICUSMARINE_SERVICE_PASSWORD = "Deusomnissiah1!")
+Sys.setenv(COPERNICUSMARINE_SERVICE_USERNAME = "COP_USERNAME_HERE")
+Sys.setenv(COPERNICUSMARINE_SERVICE_PASSWORD = "COP_PASSWORD_HERE!")
 
 toolbox <- "C:/Users/Theo/Downloads/copernicusmarine.exe"
 
