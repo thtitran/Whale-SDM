@@ -1,0 +1,2 @@
+model,tree_complexity,learning_rate,bag_fraction,best_trees,training_deviance_explained,cv_deviance,cv_deviance_se,training_auc,cv_auc,cv_auc_se
+combined_all_predictors,1,0.001,0.5,2100,16.924664725320838,1.2827585941453055,0.09070109187965655,0.799,0.732375,0.0316495227715469
