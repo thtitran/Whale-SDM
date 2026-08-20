@@ -1,0 +1,6 @@
+dataset,n_rows,n_observed,n_available,n_choice_sets,n_whales,min_available_per_choice,median_available_per_choice,mean_available_per_choice,max_available_per_choice
+static,96685,506,96179,506,4,157,191,190.07707509881422,200
+sst,65418,371,65047,371,4,40,187,175.3288409703504,198
+chlorophyll,92007,482,91525,482,4,157,191,189.88589211618256,200
+kd490,95903,502,95401,502,4,157,191,190.0418326693227,200
+combined,61285,348,60937,348,4,40,186,175.10632183908046,198

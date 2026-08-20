@@ -1,0 +1,6 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+/data/static/
+/startcases/*/6H-Gapless/BRT-output/**/*.rds
